@@ -1,0 +1,43 @@
+{
+	"schemaVersion": 1,
+	"id": "speedrun-switch",
+	"version": "${version}",
+	"name": "Speedrun Switch",
+	"description": "速通 Minecraft，但每 10 分钟更换玩家 —— 接力速通：共享背包、旁观视角绑定、任务系统、观众语音频道、F3 封锁",
+	"authors": ["CuteLittleSky"],
+	"contributors": [
+		"夏天y (Inspiration)",
+		"Andronicus (Inspiration)"
+	],
+	"contact": {},
+	"license": "GPL-3.0",
+	"icon": "",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"cn.cutelittlesky.speedrunswitch.SpeedrunSwitchMod"
+		],
+		"client": [
+			"cn.cutelittlesky.speedrunswitch.client.SpeedrunSwitchClient"
+		],
+		"voicechat": [
+			"cn.cutelittlesky.speedrunswitch.svc.SvcPlugin"
+		]
+	},
+	"mixins": [
+		"speedrun-switch.mixins.json",
+		{
+			"config": "speedrun-switch.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": ">=26.3-pre.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"custom": {
+		"loom:injected_interfaces": {}
+	}
+}

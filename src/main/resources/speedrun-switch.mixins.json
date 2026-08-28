@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "cn.cutelittlesky.speedrunswitch.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"DistanceManagerMixin",
+		"PlayerAdvancementsMixin",
+		"ServerPlayerCameraMixin",
+		"VillagerReputationMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

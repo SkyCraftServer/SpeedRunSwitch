@@ -58,7 +58,6 @@ jobs:
           mkdir -p libs/
           MC_VERSION="${{ inputs.game_version }}"
           if [ -z "$MC_VERSION" ]; then
-            MC_VERSION=$(mvn help:evaluate -Dexpression=minecraft.version -q -DforceStdout 2>/dev/null || grep -oPm1 "(?<=<minecraft.version>)[^<]+" pom.xml || echo "26.3-pre-3")
             MC_VERSION=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('pom.xml'); ns = {'m': 'http://maven.apache.org/POM/4.0.0'}; print(tree.findtext('.//m:minecraft.version', '', namespaces=ns).strip())" 2>/dev/null || sed -n 's/.*<minecraft\.version>\(.*\)<\/minecraft\.version>.*/\1/p' pom.xml | head -n 1 | tr -d '[:space:]')
           fi
           if [ -z "$MC_VERSION" ]; then
@@ -70,15 +69,8 @@ jobs:
           MC_JAR_PATH="libs/minecraft-${MC_VERSION}.jar"
           if [ ! -f "$MC_JAR_PATH" ]; then
             echo "Fetching Minecraft ${MC_VERSION} client jar from Mojang..."
-            VERSION_MANIFEST=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
             VERSION_MANIFEST=$(curl -sSfL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
             VERSION_URL=$(echo "$VERSION_MANIFEST" | jq -r --arg v "$MC_VERSION" '.versions[] | select(.id==$v) | .url')
-            if [ -n "$VERSION_URL" ] && [ "$VERSION_URL" != "null" ]; then
-              CLIENT_JAR_URL=$(curl -s "$VERSION_URL" | jq -r '.downloads.client.url')
-              curl -sL "$CLIENT_JAR_URL" -o "$MC_JAR_PATH"
-              echo "Minecraft jar downloaded to $MC_JAR_PATH."
-            else
-              echo "Warning: Version $MC_VERSION not found in manifest, building will proceed if jar exists."
             if [ -z "$VERSION_URL" ] || [ "$VERSION_URL" = "null" ]; then
               echo "::error::Version $MC_VERSION was not found in Mojang version manifest!"
               exit 1
@@ -98,7 +90,6 @@ jobs:
           fi
 
       - name: Build Mod with Maven
-        run: mvn clean package --no-transfer-progress -DskipTests
         run: mvn clean package --no-transfer-progress -DskipTests -Dminecraft.version="${{ steps.prepare-mc.outputs.mc_version }}"
 
       - name: Resolve Release Artifact & Metadata
@@ -119,7 +110,6 @@ jobs:
           if [[ "$VERSION" == v* ]]; then
             VERSION="${VERSION#v}"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$VERSION" ]; then
-            POM_VER=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout 2>/dev/null || grep -oPm1 "(?<=<version>)[^<]+" pom.xml | head -n 1)
             POM_VER=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('pom.xml'); ns = {'m': 'http://maven.apache.org/POM/4.0.0'}; print(tree.findtext('.//m:version', '', namespaces=ns).strip())" 2>/dev/null || sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d '[:space:]')
             VERSION="${POM_VER:-1.0.0}"
           fi

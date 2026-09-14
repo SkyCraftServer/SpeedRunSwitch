@@ -31,7 +31,6 @@
         <netty.version>4.1.97.Final</netty.version>
         <jspecify.version>1.0.0</jspecify.version>
         
-        <minecraft.jar.path>${project.basedir}/libs/minecraft-26.3-pre-3.jar</minecraft.jar.path>
         <minecraft.jar.path>${project.basedir}/libs/minecraft-${minecraft.version}.jar</minecraft.jar.path>
     </properties>
 

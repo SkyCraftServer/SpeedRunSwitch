@@ -27,7 +27,7 @@ jobs:
           mkdir -p libs/
           MC_VERSION=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('pom.xml'); ns = {'m': 'http://maven.apache.org/POM/4.0.0'}; print(tree.findtext('.//m:minecraft.version', '', namespaces=ns).strip())" 2>/dev/null || sed -n 's/.*<minecraft\.version>\(.*\)<\/minecraft\.version>.*/\1/p' pom.xml | head -n 1 | tr -d '[:space:]')
           if [ -z "$MC_VERSION" ]; then
-            MC_VERSION="26.3-pre-3"
+            MC_VERSION="26.3"
           fi
           echo "Target Minecraft version: $MC_VERSION"
           MC_JAR_PATH="libs/minecraft-${MC_VERSION}.jar"

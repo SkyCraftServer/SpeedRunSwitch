@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Minecraft](https://img.shields.io/badge/Minecraft-%3E%3D%2026.3--pre--3%20%7C%2026.3-brightgreen.svg?logo=minecraft)](https://www.minecraft.net/)
+[![Minecraft](https://img.shields.io/badge/Minecraft-%3E%3D%2026.3-brightgreen.svg?logo=minecraft)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/Loader-Fabric%200.19.5+-blue.svg?logo=fabric)](https://fabricmc.net/)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg?logo=openjdk)](https://adoptium.net/)
 [![Simple Voice Chat](https://img.shields.io/badge/Voice%20Chat-Optional%202.6.20+-purple.svg)](https://modrinth.com/plugin/simple-voice-chat)

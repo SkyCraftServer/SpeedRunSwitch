@@ -8,6 +8,21 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      bump:
+        description: 'Version bump strategy (ignored if release_version is provided)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+      release_version:
+        description: 'Exact release version (leave blank to auto-bump from pom.xml)'
+        required: false
+        default: ''
+        type: string
       version_type:
         description: 'Release type (release, beta, alpha)'
         required: true
@@ -28,7 +43,7 @@ on:
         default: ''
         type: string
       changelog:
-        description: 'Changelog / Release notes (leave blank to auto-detect from release or commit)'
+        description: 'Changelog / Release notes (leave blank to auto-detect from commits)'
         required: false
         default: ''
         type: string
@@ -39,11 +54,13 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -51,6 +68,50 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
+
+      - name: Resolve & Bump Release Version
+        id: ver
+        run: |
+          CURRENT_VER=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('pom.xml'); ns = {'m': 'http://maven.apache.org/POM/4.0.0'}; print(tree.findtext('.//m:version', '', namespaces=ns).strip())")
+          echo "Current POM version: $CURRENT_VER"
+
+          TARGET_VER=$(python3 .github/scripts/bump_version.py "${{ inputs.release_version }}" "${{ inputs.bump }}" "${{ github.ref_name }}" "${{ github.event_name }}")
+          echo "Target Release version: $TARGET_VER"
+          echo "version=$TARGET_VER" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$TARGET_VER" >> "$GITHUB_OUTPUT"
+
+          VER_TYPE="${{ inputs.version_type }}"
+          if [ -z "$VER_TYPE" ]; then
+            if [[ "$TARGET_VER" =~ (alpha|a) ]]; then
+              VER_TYPE="alpha"
+            elif [[ "$TARGET_VER" =~ (beta|b|pre|rc) ]]; then
+              VER_TYPE="beta"
+            else
+              VER_TYPE="release"
+            fi
+          fi
+          echo "version_type=$VER_TYPE" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT_VER" != "$TARGET_VER" ]; then
+            echo "Updating pom.xml version from $CURRENT_VER to $TARGET_VER..."
+            python3 .github/scripts/bump_version.py --update "${{ inputs.release_version }}" "${{ inputs.bump }}" "${{ github.ref_name }}" "${{ github.event_name }}"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pom.xml
+            git commit -m "chore(release): bump version to $TARGET_VER [skip ci]"
+            git fetch origin main
+            git push origin HEAD:main || echo "::warning::Could not push pom.xml update to main"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="v$TARGET_VER"
+            if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+              echo "Creating and pushing tag $TAG_NAME..."
+              git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+              git push origin "$TAG_NAME" || echo "Tag $TAG_NAME push skipped"
+            fi
+          fi
 
       - name: Prepare Minecraft Dependency
         id: prepare-mc
@@ -106,35 +167,22 @@ jobs:
           echo "Found mod jar: $JAR_PATH"
           echo "jar_path=$JAR_PATH" >> "$GITHUB_OUTPUT"
 
-          VERSION="${{ github.ref_name }}"
-          if [[ "$VERSION" == v* ]]; then
-            VERSION="${VERSION#v}"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$VERSION" ]; then
-            POM_VER=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('pom.xml'); ns = {'m': 'http://maven.apache.org/POM/4.0.0'}; print(tree.findtext('.//m:version', '', namespaces=ns).strip())" 2>/dev/null || sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d '[:space:]')
-            VERSION="${POM_VER:-1.0.0}"
-          fi
-          echo "Resolved version: $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          VER_TYPE="${{ inputs.version_type }}"
-          if [ -z "$VER_TYPE" ]; then
-            if [[ "$VERSION" =~ (alpha|a) ]]; then
-              VER_TYPE="alpha"
-            elif [[ "$VERSION" =~ (beta|b|pre|rc) ]]; then
-              VER_TYPE="beta"
-            else
-              VER_TYPE="release"
-            fi
-          fi
-          echo "Version type: $VER_TYPE"
-          echo "version_type=$VER_TYPE" >> "$GITHUB_OUTPUT"
-
           CHANGELOG="${{ inputs.changelog }}"
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="${{ github.event.release.body }}"
           fi
           if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="Release Speedrun Switch v${VERSION} for Minecraft ${{ steps.prepare-mc.outputs.mc_version }}"
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$PREV_TAG" ]; then
+              COMMITS=$(git log "${PREV_TAG}..HEAD" --oneline --no-merges 2>/dev/null || echo "")
+            else
+              COMMITS=$(git log -n 10 --oneline --no-merges 2>/dev/null || echo "")
+            fi
+            if [ -n "$COMMITS" ]; then
+              CHANGELOG=$(printf "Release Speedrun Switch v%s for Minecraft %s\n\n### Changes:\n%s" "${{ steps.ver.outputs.version }}" "${{ steps.prepare-mc.outputs.mc_version }}" "$COMMITS")
+            else
+              CHANGELOG="Release Speedrun Switch v${{ steps.ver.outputs.version }} for Minecraft ${{ steps.prepare-mc.outputs.mc_version }}"
+            fi
           fi
           echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
           echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
@@ -187,14 +235,26 @@ jobs:
         with:
           token: ${{ secrets.MODRINTH_TOKEN }}
           project: ${{ steps.meta.outputs.project_id }}
-          name: "Speedrun Switch v${{ steps.meta.outputs.version }} [${{ steps.prepare-mc.outputs.mc_version }}]"
-          version: ${{ steps.meta.outputs.version }}
-          channel: ${{ steps.meta.outputs.version_type }}
+          name: "Speedrun Switch v${{ steps.ver.outputs.version }} [${{ steps.prepare-mc.outputs.mc_version }}]"
+          version: ${{ steps.ver.outputs.version }}
+          channel: ${{ steps.ver.outputs.version_type }}
           game-versions: ${{ steps.prepare-mc.outputs.mc_version }}
           loaders: fabric
           files: ${{ steps.meta.outputs.jar_path }}
           dependencies: '[{ "project_id": "P7dR8mSH", "dependency_type": "required" }, { "project_id": "9eGKb6K1", "dependency_type": "optional" }]'
           changelog: ${{ steps.meta.outputs.changelog }}
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ steps.ver.outputs.tag_name }}
+          name: "Speedrun Switch v${{ steps.ver.outputs.version }} [${{ steps.prepare-mc.outputs.mc_version }}]"
+          body: ${{ steps.meta.outputs.changelog }}
+          prerelease: ${{ steps.ver.outputs.version_type != 'release' }}
+          files: ${{ steps.meta.outputs.jar_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Build Artifact to GitHub Actions
         uses: actions/upload-artifact@v4

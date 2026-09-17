@@ -5,6 +5,8 @@
 [![Minecraft](https://img.shields.io/badge/Minecraft-%3E%3D%2026.3-brightgreen.svg?logo=minecraft)](https://www.minecraft.net/)
 [![Fabric](https://img.shields.io/badge/Loader-Fabric%200.19.5+-blue.svg?logo=fabric)](https://fabricmc.net/)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg?logo=openjdk)](https://adoptium.net/)
+[![CurseForge](https://img.shields.io/badge/CurseForge-Speedrun%20Switch-orange.svg?logo=curseforge)](https://www.curseforge.com/minecraft/mc-mods/speedrun-switch)
+[![Modrinth](https://img.shields.io/badge/Modrinth-Speedrun%20Switch-green.svg?logo=modrinth)](https://modrinth.com/mod/speedrunswitch)
 [![Simple Voice Chat](https://img.shields.io/badge/Voice%20Chat-Optional%202.6.20+-purple.svg)](https://modrinth.com/plugin/simple-voice-chat)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 

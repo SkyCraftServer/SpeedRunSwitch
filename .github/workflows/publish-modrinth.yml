@@ -1,4 +1,4 @@
-name: Publish to Modrinth
+name: Publish to Modrinth and CurseForge
 
 on:
   release:
@@ -37,8 +37,22 @@ on:
         required: false
         default: ''
         type: string
+      publish_target:
+        description: 'Publish platform (all: Modrinth + CurseForge, modrinth: Modrinth only, curseforge: CurseForge only)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - modrinth
+          - curseforge
       modrinth_id:
         description: 'Modrinth project slug or ID (leave blank to use MODRINTH_PROJECT_ID secret/var or default speedrunswitch)'
+        required: false
+        default: ''
+        type: string
+      curseforge_id:
+        description: 'CurseForge project slug or ID (leave blank to use CURSEFORGE_PROJECT_ID secret/var or default 1697916)'
         required: false
         default: ''
         type: string
@@ -50,7 +64,7 @@ on:
 
 jobs:
   publish:
-    name: Build and Upload to Modrinth
+    name: Build and Upload to Modrinth & CurseForge
     runs-on: ubuntu-latest
 
     permissions:
@@ -221,8 +235,47 @@ jobs:
           echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
           echo "project_slug=$PROJECT_SLUG" >> "$GITHUB_OUTPUT"
 
+          RAW_CF_PROJECT="${{ inputs.curseforge_id || vars.CURSEFORGE_PROJECT_ID || '1697916' }}"
+          echo "Input CurseForge project: $RAW_CF_PROJECT"
+          CF_PROJECT_ID="$RAW_CF_PROJECT"
+
+          if [[ "$RAW_CF_PROJECT" == "speedrun-switch" ]]; then
+            CF_PROJECT_ID="1697916"
+          elif [[ ! "$RAW_CF_PROJECT" =~ ^[0-9]+$ ]]; then
+            echo "CurseForge project '$RAW_CF_PROJECT' is not numeric. Querying CurseForge API to resolve project ID..."
+            CF_KEY='$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm'
+            CF_SEARCH_RESP=$(curl -s -H "x-api-key: $CF_KEY" "https://api.curseforge.com/v1/mods/search?gameId=432&slug=${RAW_CF_PROJECT}")
+            RESOLVED_CF_ID=$(echo "$CF_SEARCH_RESP" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
+            if [ -n "$RESOLVED_CF_ID" ] && [ "$RESOLVED_CF_ID" != "null" ]; then
+              echo "Successfully resolved CurseForge project ID: $RESOLVED_CF_ID"
+              CF_PROJECT_ID="$RESOLVED_CF_ID"
+            else
+              echo "::warning::Could not resolve CurseForge project ID from slug '$RAW_CF_PROJECT'. Falling back to default 1697916"
+              CF_PROJECT_ID="1697916"
+            fi
+          fi
+
+          echo "Final CurseForge project ID: $CF_PROJECT_ID"
+          echo "curseforge_id=$CF_PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+          PUBLISH_TARGET="${{ inputs.publish_target || 'all' }}"
+          echo "Publish target platform: $PUBLISH_TARGET"
+          DO_MODRINTH="true"
+          DO_CURSEFORGE="true"
+          if [ "$PUBLISH_TARGET" = "modrinth" ]; then
+            DO_CURSEFORGE="false"
+          elif [ "$PUBLISH_TARGET" = "curseforge" ]; then
+            DO_MODRINTH="false"
+          fi
+          echo "Target flags -> Modrinth: $DO_MODRINTH, CurseForge: $DO_CURSEFORGE"
+          echo "do_modrinth=$DO_MODRINTH" >> "$GITHUB_OUTPUT"
+          echo "do_curseforge=$DO_CURSEFORGE" >> "$GITHUB_OUTPUT"
+
       - name: Update Modrinth Project Description
+        if: steps.meta.outputs.do_modrinth == 'true' && env.MODRINTH_TOKEN != ''
         uses: funnyboy-roks/modrinth-auto-desc@v1.7
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
         with:
           auth-token: ${{ secrets.MODRINTH_TOKEN }}
           slug: ${{ steps.meta.outputs.project_slug }}
@@ -230,8 +283,18 @@ jobs:
           branch: 'main'
           project-name: 'SpeedrunSwitch'
 
+      - name: Check Modrinth Token
+        if: steps.meta.outputs.do_modrinth == 'true' && env.MODRINTH_TOKEN == ''
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          echo "::warning::MODRINTH_TOKEN secret is not set. Skipping Modrinth upload."
+
       - name: Publish to Modrinth
+        if: steps.meta.outputs.do_modrinth == 'true' && env.MODRINTH_TOKEN != ''
         uses: cloudnode-pro/modrinth-publish@v2
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
         with:
           token: ${{ secrets.MODRINTH_TOKEN }}
           project: ${{ steps.meta.outputs.project_id }}
@@ -242,6 +305,32 @@ jobs:
           loaders: fabric
           files: ${{ steps.meta.outputs.jar_path }}
           dependencies: '[{ "project_id": "P7dR8mSH", "dependency_type": "required" }, { "project_id": "9eGKb6K1", "dependency_type": "optional" }]'
+          changelog: ${{ steps.meta.outputs.changelog }}
+
+      - name: Check CurseForge Token
+        if: steps.meta.outputs.do_curseforge == 'true' && env.CURSEFORGE_TOKEN == ''
+        env:
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          echo "::warning::CURSEFORGE_TOKEN secret is not set. Skipping CurseForge upload. To publish to CurseForge, create an API token at https://authors.curseforge.com/account/api-tokens and add it as CURSEFORGE_TOKEN under repository Settings -> Secrets and variables -> Actions."
+
+      - name: Publish to CurseForge
+        if: steps.meta.outputs.do_curseforge == 'true' && env.CURSEFORGE_TOKEN != ''
+        uses: Kir-Antipov/mc-publish@v3.3
+        env:
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        with:
+          curseforge-id: ${{ steps.meta.outputs.curseforge_id }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: ${{ steps.meta.outputs.jar_path }}
+          name: "Speedrun Switch v${{ steps.ver.outputs.version }} [${{ steps.prepare-mc.outputs.mc_version }}]"
+          version: ${{ steps.ver.outputs.version }}
+          version-type: ${{ steps.ver.outputs.version_type }}
+          game-versions: ${{ steps.prepare-mc.outputs.mc_version }}
+          loaders: fabric
+          curseforge-dependencies: |
+            fabric-api(required)
+            simple-voice-chat(optional)
           changelog: ${{ steps.meta.outputs.changelog }}
 
       - name: Create or Update GitHub Release
